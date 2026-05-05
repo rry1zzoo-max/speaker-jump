@@ -1,0 +1,15 @@
+{
+  "name": "SpeakerJump Navigator",
+  "short_name": "SpeakerJump",
+  "start_url": "speakerjump.html",
+  "display": "standalone",
+  "background_color": "#667eea",
+  "theme_color": "#0284c7",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/727/727218.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
