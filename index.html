@@ -6,8 +6,7 @@
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<title>SpeakerJump</title>
-<link rel="manifest" href="manifest.json">
+<title>SpeakerJump – Audio Transcript Navigator</title>
 <meta name="theme-color" content="#0284c7" />
 <style>
   :root{
@@ -15,6 +14,7 @@
     --card: #ffffff;
     --primary: #0284c7;
     --primary-dark: #0369a1;
+    --primary-light: #38bdf8;
     --text: #1e293b;
     --text-secondary: #64748b;
     --border: #e2e8f0;
@@ -26,16 +26,21 @@
     --radius-sm: 8px;
     --avatar: 56px;
     --halo: 16px;
+    --grid-min: calc(var(--avatar) * 2.8);
   }
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
 
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     background: var(--bg);
     min-height: 100vh;
     padding: 12px;
     padding-bottom: 160px;
+    line-height: 1.6;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
   }
 
   .container {
@@ -45,90 +50,270 @@
     border-radius: var(--radius);
     padding: 20px;
     box-shadow: 0 20px 60px var(--shadow-lg);
+    overflow: hidden;
   }
 
-  h1 { font-size: 24px; text-align: center; color: var(--primary); margin-bottom: 16px; }
+  h1 { font-size: 24px; font-weight: 800; text-align: center; color: var(--primary); margin-bottom: 16px; letter-spacing: -0.5px; }
 
   .seek-container { background: #f8fafc; padding: 16px; border-radius: var(--radius-sm); margin-bottom: 16px; }
 
-  input[type="range"] { width: 100%; height: 12px; border-radius: 6px; background: #e2e8f0; -webkit-appearance: none; margin: 12px 0; }
-  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 32px; height: 32px; border-radius: 50%; background: var(--primary); cursor: pointer; }
+  input[type="range"] {
+    width: 100%; height: 12px; border-radius: 6px; background: #e2e8f0; outline: none; -webkit-appearance: none; margin: 12px 0; touch-action: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 32px; height: 32px; border-radius: 50%; background: var(--primary); cursor: pointer; box-shadow: 0 2px 8px var(--shadow);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 32px; height: 32px; border-radius: 50%; background: var(--primary); cursor: pointer; border: none; box-shadow: 0 2px 8px var(--shadow);
+  }
 
-  .time { display: flex; justify-content: space-between; color: var(--text-secondary); font-size: 14px; font-weight: 600; }
+  .time { display: flex; justify-content: space-between; color: var(--text-secondary); font-size: 14px; font-weight: 600; margin-top: 8px; }
 
-  .speakers-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; margin: 16px 0; min-height: 100px; }
+  .speakers-grid {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; margin: 16px 0; min-height: 200px; -webkit-overflow-scrolling: touch; padding: 0 8px;
+  }
 
-  .speaker { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 110px; transition: transform 0.2s; }
-  .speaker.active { transform: scale(1.1); }
-  .speaker-avatar { width: var(--avatar); height: var(--avatar); border-radius: 50%; overflow: hidden; background: #e2e8f0; border: 3px solid transparent; }
-  .speaker.active .speaker-avatar { border-color: var(--primary); box-shadow: 0 0 15px var(--primary); }
+  .speaker {
+    background: transparent; border: none; padding: 12px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; cursor: pointer;
+    transition: transform 0.2s ease; border-radius: var(--radius-sm); -webkit-tap-highlight-color: transparent; touch-action: manipulation; flex: 0 0 auto; width: 110px;
+  }
+  @media (hover: hover) { .speaker:hover { transform: translateY(-2px); } }
+  .speaker.active { z-index: 10; }
+
+  .avatar-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; }
+  .halo-pad { position: relative; display: inline-flex; align-items: center; justify-content: center; padding: var(--halo); border-radius: 50%; }
+
+  .speaker-avatar {
+    width: var(--avatar); height: var(--avatar); border-radius: 50%; display: flex; align-items: center; justify-content: center; overflow: hidden;
+    box-shadow: 0 4px 12px var(--shadow); transition: transform 0.3s ease, box-shadow 0.3s ease; background: #e2e8f0;
+  }
   .speaker-avatar img { width: 100%; height: 100%; object-fit: cover; }
-  .speaker-name { font-size: 14px; font-weight: 700; color: var(--text); text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; }
+
+  .speaker.active .halo-pad::after {
+    content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.5), 0 0 0 8px rgba(59, 130, 246, 0.3), 0 0 20px rgba(59, 130, 246, 0.4);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  .speaker.active .speaker-avatar { transform: scale(1.08); box-shadow: 0 8px 24px var(--shadow-lg); }
+  .speaker.active .halo-pad::before {
+    content: "🎤"; position: absolute; right: 4px; bottom: 4px; z-index: 2; width: 24px; height: 24px; border-radius: 50%; background: var(--primary);
+    display: flex; align-items: center; justify-content: center; font-size: 12px; box-shadow: 0 2px 8px var(--shadow);
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.5), 0 0 0 8px rgba(59, 130, 246, 0.3), 0 0 20px rgba(59, 130, 246, 0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.6), 0 0 0 12px rgba(59, 130, 246, 0.4), 0 0 28px rgba(59, 130, 246, 0.5); }
+  }
+
+  .speaker-name { font-size: 14px; font-weight: 700; color: var(--text); word-break: break-word; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .controls {
-    position: fixed; bottom: 0; left: 0; right: 0; background: var(--card); display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; background: var(--card); display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
     padding: 12px; border-top: 2px solid var(--border); box-shadow: 0 -8px 32px var(--shadow);
   }
 
   button {
-    background: var(--primary); color: white; border: none; border-radius: var(--radius-sm); padding: 10px; font-weight: 700; cursor: pointer; flex: 1; min-height: 44px;
+    background: var(--primary); color: white; border: none; border-radius: var(--radius-sm); padding: 10px 14px; font-weight: 700; font-size: 14px; cursor: pointer;
+    transition: all 0.2s ease; white-space: nowrap; -webkit-tap-highlight-color: transparent; touch-action: manipulation; min-height: 40px;
   }
-  button:disabled { background: #cbd5e1; }
+  @media (hover: hover) { button:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 4px 12px var(--shadow); } }
+  button:active { transform: translateY(0); background: var(--primary-dark); }
+  button:disabled { background: #cbd5e1; cursor: not-allowed; opacity: 0.6; }
 
-  .status { margin-top: 16px; padding: 12px; border-radius: var(--radius-sm); text-align: center; font-size: 14px; background: #f8fafc; }
-  .status.success { color: var(--success); border: 1px solid var(--success); }
+  .btn-compact { padding: 6px 10px; font-size: 12px; min-height: 34px; }
 
-  @media (max-width: 600px) {
-    .controls { padding: 10px; }
-    button { font-size: 12px; }
+  .speed-btn, .mode-btn, .size-btn {
+    background: #f1f5f9; color: var(--text); padding: 8px 12px; font-size: 13px; min-height: 40px;
+  }
+  @media (hover: hover) { .speed-btn:hover, .mode-btn:hover, .size-btn:hover { background: #e2e8f0; } }
+  .speed-btn.active, .mode-btn.active { background: var(--primary); color: white; }
+
+  .size-readout { font-weight: 800; color: var(--text); padding: 0 4px; min-width: 45px; text-align: center; font-size: 12px; }
+
+  .toggle-wrap { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-weight: 600; font-size: 12px; margin-left: auto; }
+  input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; touch-action: manipulation; }
+
+  .status {
+    margin-top: 16px; padding: 16px; border-radius: var(--radius-sm); text-align: center; background: #f8fafc; color: var(--text-secondary);
+    font-weight: 600; border: 2px solid var(--border);
+  }
+  .status.error { background: #fee; color: var(--error); border-color: var(--error); }
+  .status.success { background: #ecfdf5; color: var(--success); border-color: var(--success); }
+
+  .chapters { margin-top: 24px; padding-top: 24px; border-top: 2px solid var(--border); }
+  .chapters h3 { font-size: 20px; margin-bottom: 16px; color: var(--text); font-weight: 800; }
+  .chapter-item {
+    display: flex; align-items: center; gap: 12px; padding: 16px; background: #f8fafc; border-radius: var(--radius-sm); cursor: pointer; margin-bottom: 8px;
+    border-left: 4px solid var(--primary); transition: all 0.2s ease; -webkit-tap-highlight-color: transparent; touch-action: manipulation; min-height: 56px;
+  }
+  @media (hover: hover) { .chapter-item:hover { background: #f1f5f9; transform: translateX(4px); box-shadow: 0 2px 8px var(--shadow); } }
+  .chapter-item:active { background: #e2e8f0; }
+  .chapter-time { font-weight: 900; color: var(--primary); min-width: 60px; font-size: 14px; }
+  .chapter-speaker { font-weight: 700; color: var(--text); font-size: 14px; }
+
+  .nine-up .speaker { width: 110px; }
+  .sixteen-up .speaker { width: 90px; }
+  .sixteen-up .speaker-avatar { width: calc(var(--avatar) - 8px); height: calc(var(--avatar) - 8px); }
+  .twentyfive-up .speaker { width: 75px; }
+  .twentyfive-up .speaker-avatar { width: calc(var(--avatar) - 12px); height: calc(var(--avatar) - 12px); }
+  .twentyfive-up .speaker-name { font-size: 12px; }
+
+  @media (max-width: 768px) {
+    body { padding: 8px; padding-bottom: 160px; }
+    .container { padding: 16px; }
+    h1 { font-size: 20px; margin-bottom: 12px; }
+    .seek-container { padding: 12px; }
+    .controls { gap: 6px; padding: 10px 8px; flex-wrap: wrap; }
+    .controls > div { display: flex; gap: 6px; flex: 1; min-width: 100%; }
+    button { flex: 1; padding: 10px 12px; font-size: 13px; }
+    .speakers-grid { gap: 12px; }
+    .toggle-wrap { margin-left: 0; width: 100%; justify-content: center; padding: 6px 0; }
   }
 </style>
 </head>
 <body>
   <div class="container">
     <h1>🎧 SpeakerJump</h1>
+
     <div class="seek-container">
       <input id="seekBar" type="range" min="0" max="100" value="0" disabled />
-      <div class="time"><span id="currentTime">0:00</span><span id="duration">0:00</span></div>
+      <div class="time">
+        <span id="currentTime">0:00</span>
+        <span id="duration">0:00</span>
+      </div>
     </div>
+
     <div id="speakersGrid" class="speakers-grid"></div>
-    <div id="status" class="status">Load files to begin</div>
+
+    <div id="chapters" class="chapters" style="display:none;">
+      <h3>📍 Speaker Chapters</h3>
+      <div id="chaptersList"></div>
+    </div>
+
+    <div id="status" class="status">Load a JSONL transcript and audio file to begin</div>
   </div>
 
   <div class="controls">
-    <button onclick="document.getElementById('transcriptInput').click()">📄 Transcript</button>
-    <input id="transcriptInput" type="file" accept=".jsonl,.json" hidden />
-    <button onclick="document.getElementById('audioInput').click()">🔊 Audio</button>
-    <input id="audioInput" type="file" accept="audio/*" hidden />
+    <div>
+      <button id="transcriptBtn" class="btn-compact">📄 Load Transcript</button>
+      <input id="transcriptInput" type="file" accept=".jsonl,.json" hidden />
+    </div>
+    <div>
+      <button id="audioBtn" class="btn-compact">🔊 Load Audio</button>
+      <input id="audioInput" type="file" accept="audio/*" hidden />
+    </div>
+
     <button id="playPauseBtn" disabled>▶️ Play</button>
-    <button id="rewindBtn">⏪ -30s</button>
-    <button id="skipBtn">⏭️ +30s</button>
+    <button id="rewind30Btn" title="Rewind 30 seconds">⏪ -30s</button>
+    <button id="skip30Btn" title="Skip ahead 30 seconds">⏭️ +30s</button>
+
+    <div style="display:flex;gap:6px;align-items:center;">
+      <span style="font-size:14px;color:var(--text-secondary);font-weight:600;">Speed:</span>
+      <button class="speed-btn active" data-speed="1">1x</button>
+      <button class="speed-btn" data-speed="1.5">1.5x</button>
+      <button class="speed-btn" data-speed="2">2x</button>
+    </div>
+
+    <div style="display:flex;gap:6px;align-items:center;">
+      <button id="mode3" class="mode-btn active">3×3</button>
+      <button id="mode4" class="mode-btn">4×4</button>
+      <button id="mode5" class="mode-btn">5×5</button>
+    </div>
+
+    <div style="display:flex;gap:6px;align-items:center;">
+      <button id="sizeDown" class="size-btn">A−</button>
+      <span id="sizeReadout" class="size-readout">56px</span>
+      <button id="sizeUp" class="size-btn">A+</button>
+    </div>
+
+    <label class="toggle-wrap" title="Show only speakers currently talking">
+      <input id="onlyActiveToggle" type="checkbox" />
+      Only active
+    </label>
   </div>
 
-  <audio id="audioPlayer" preload="metadata"></audio>
+  <audio id="audioPlayer" preload="metadata" playsinline></audio>
 
 <script>
-// PWA Service Worker Registration
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js');
-}
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
-const $ = s => document.querySelector(s);
-const audio = $('#audioPlayer');
+const transcriptBtn = $('#transcriptBtn');
+const transcriptInput = $('#transcriptInput');
+const audioBtn = $('#audioBtn');
+const audioInput = $('#audioInput');
 const playBtn = $('#playPauseBtn');
+const rewind30Btn = $('#rewind30Btn');
+const skip30Btn = $('#skip30Btn');
 const seekBar = $('#seekBar');
+const currentTimeEl = $('#currentTime');
+const durationEl = $('#duration');
+const grid = $('#speakersGrid');
+const statusEl = $('#status');
+const audio = $('#audioPlayer');
+const onlyActiveToggle = $('#onlyActiveToggle');
+const chaptersContainer = $('#chapters');
+const chaptersList = $('#chaptersList');
+
+const btn3 = $('#mode3');
+const btn4 = $('#mode4');
+const btn5 = $('#mode5');
+
+const sizeDown = $('#sizeDown');
+const sizeUp = $('#sizeUp');
+const sizeReadout = $('#sizeReadout');
+
 let speakers = [];
 let events = [];
 let startTimestamp = null;
+const STOP = 16;
+const START = 17;
+const speakerById = new Map();
+let initialOrder = new Map();
 
-// Audio Controls
-$('#audioInput').onchange = e => {
-  const f = e.target.files[0];
+function setMode(cls) {
+  document.body.classList.remove('nine-up', 'sixteen-up', 'twentyfive-up');
+  document.body.classList.add(cls);
+  [btn3, btn4, btn5].forEach(b => b.classList.remove('active'));
+  if (cls === 'nine-up') btn3.classList.add('active');
+  if (cls === 'sixteen-up') btn4.classList.add('active');
+  if (cls === 'twentyfive-up') btn5.classList.add('active');
+}
+
+btn3.onclick = () => setMode('nine-up');
+btn4.onclick = () => setMode('sixteen-up');
+btn5.onclick = () => setMode('twentyfive-up');
+setMode('nine-up');
+
+let avatarPx = 56;
+const MIN_AV = 32;
+const MAX_AV = 96;
+
+function applyAvatar() {
+  document.documentElement.style.setProperty('--avatar', avatarPx + 'px');
+  document.documentElement.style.setProperty('--grid-min', `calc(${avatarPx}px * 2.8)`);
+  sizeReadout.textContent = avatarPx + 'px';
+}
+
+sizeDown.onclick = () => { avatarPx = Math.max(MIN_AV, avatarPx - 4); applyAvatar(); };
+sizeUp.onclick = () => { avatarPx = Math.min(MAX_AV, avatarPx + 4); applyAvatar(); };
+applyAvatar();
+
+transcriptBtn.onclick = () => transcriptInput.click();
+audioBtn.onclick = () => audioInput.click();
+
+function setStatus(msg, t = '') {
+  statusEl.textContent = msg;
+  statusEl.className = `status ${t}`.trim();
+}
+
+audioInput.onchange = e => {
+  const f = e.target.files?.[0];
+  if (!f) return;
   audio.src = URL.createObjectURL(f);
   playBtn.disabled = false;
   seekBar.disabled = false;
-  $('#status').textContent = `Loaded: ${f.name}`;
-  $('#status').className = 'status success';
+  setStatus(`Audio loaded: ${f.name}`, 'success');
 };
 
 playBtn.onclick = () => {
@@ -136,73 +321,284 @@ playBtn.onclick = () => {
   else { audio.pause(); playBtn.textContent = '▶️ Play'; }
 };
 
-$('#rewindBtn').onclick = () => audio.currentTime = Math.max(audio.currentTime - 30, 0);
-$('#skipBtn').onclick = () => audio.currentTime = Math.min(audio.currentTime + 30, audio.duration);
+rewind30Btn.onclick = () => {
+  const cur = audio.currentTime || 0;
+  audio.currentTime = Math.max(cur - 30, 0);
+};
 
-audio.ontimeupdate = () => {
-  seekBar.value = audio.currentTime;
-  $('#currentTime').textContent = Math.floor(audio.currentTime/60) + ":" + String(Math.floor(audio.currentTime%60)).padStart(2,'0');
+skip30Btn.onclick = () => {
+  const cur = audio.currentTime || 0;
+  const dur = Number.isFinite(audio.duration) ? audio.duration : cur + 30;
+  audio.currentTime = Math.min(cur + 30, dur);
+};
+
+audio.addEventListener('loadedmetadata', () => {
+  seekBar.max = String(audio.duration || 0);
+  durationEl.textContent = fmt(audio.duration || 0);
+});
+
+audio.addEventListener('timeupdate', () => {
+  seekBar.value = String(audio.currentTime || 0);
+  currentTimeEl.textContent = fmt(audio.currentTime || 0);
   updateActiveUI();
-};
+});
 
-audio.onloadedmetadata = () => {
-  seekBar.max = audio.duration;
-  $('#duration').textContent = Math.floor(audio.duration/60) + ":" + String(Math.floor(audio.duration%60)).padStart(2,'0');
-};
+seekBar.oninput = e => audio.currentTime = Number(e.target.value || 0);
 
-seekBar.oninput = () => audio.currentTime = seekBar.value;
-
-// Transcript Logic
-$('#transcriptInput').onchange = e => {
-  const reader = new FileReader();
-  reader.onload = ev => {
-    const lines = ev.target.result.split('\n');
-    const seen = new Map();
-    events = [];
-    lines.forEach(line => {
-      if(!line.trim()) return;
-      const data = JSON.parse(line);
-      const p = data.payload || data;
-      const uid = p.user_id || (p.body && p.body.sender);
-      if(uid) {
-        if(!seen.has(uid)) seen.set(uid, {userId: uid, displayName: uid});
-        const isStart = line.includes('START') || line.includes('"type":17');
-        events.push({ts: p.timestamp || p.ts, userId: uid, isSpeaking: isStart});
-      }
-    });
-    speakers = Array.from(seen.values());
-    startTimestamp = events[0]?.ts;
-    renderSpeakers();
+$$('.speed-btn').forEach(b => {
+  b.onclick = () => {
+    audio.playbackRate = Number(b.dataset.speed);
+    $$('.speed-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
   };
-  reader.readAsText(e.target.files[0]);
-};
+});
 
-function renderSpeakers() {
-  const grid = $('#speakersGrid');
+function getInitials(n) { if (!n) return '?'; return n.split(' ').map(x => x[0]).join('').slice(0, 2).toUpperCase(); }
+function getAvatarColor(id) {
+  const colors = ['#667eea', '#f093fb', '#4facfe', '#43e97b', '#fa709a', '#30cfd0', '#a8edea', '#fed6e3'];
+  let hash = 0; for (let i = 0; i < id.length; i++) { hash = id.charCodeAt(i) + ((hash << 5) - hash); }
+  return colors[Math.abs(hash) % colors.length];
+}
+function makeInitialsDataURL(name, id) {
+  const initials = getInitials(name); const c1 = getAvatarColor(id); const c2 = getAvatarColor(id + 'x');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+    <defs>
+      <linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></linearGradient>
+      <clipPath id="clip"><circle cx="80" cy="80" r="80"/></clipPath>
+    </defs>
+    <rect width="160" height="160" fill="url(#g)"/>
+    <g clip-path="url(#clip)">
+      <rect width="160" height="160" fill="url(#g)"/>
+      <text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle"
+            font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif"
+            font-size="72" font-weight="800" fill="white">${initials}</text>
+    </g>
+  </svg>`;
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+function normalizeTwitterUrl(url) {
+  if (!url) return url;
+  if (/_reasonably_small\.(jpg|jpeg|png)$/i.test(url)) { return url.replace('_reasonably_small', '_400x400'); }
+  return url;
+}
+function buildAvatarSources(s) {
+  const sources = [];
+  const raw = normalizeTwitterUrl((s.profileImage || '').trim());
+  if (raw) {
+    sources.push(raw);
+    if (/_400x400\./.test(raw)) sources.push(raw.replace('_400x400', '_normal'));
+    if (/_normal\./.test(raw)) sources.push(raw.replace('_normal', '_400x400'));
+  }
+  const uname = (s.username || '').replace(/^@/, '').trim();
+  if (uname) { sources.push(`https://unavatar.io/twitter/${encodeURIComponent(uname)}`); sources.push(`https://unavatar.io/${encodeURIComponent(uname)}`); }
+  const display = s.displayName || s.username || s.userId;
+  sources.push(`https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(display || uname || s.userId)}&backgroundType=gradientLinear`);
+  return sources;
+}
+function setAvatarImage(imgEl, sources, name, id) {
+  let i = 0;
+  const tryNext = () => { imgEl.src = (i < sources.length) ? sources[i++] : makeInitialsDataURL(name, id); };
+  imgEl.referrerPolicy = 'no-referrer'; imgEl.crossOrigin = 'anonymous'; imgEl.decoding = 'async'; imgEl.loading = 'lazy';
+  imgEl.onerror = tryNext;
+  tryNext();
+}
+
+function renderSpeakers(filterSet = null) {
   grid.innerHTML = '';
-  speakers.forEach(s => {
-    const div = document.createElement('div');
-    div.className = 'speaker';
-    div.id = `spk-${s.userId}`;
-    div.innerHTML = `<div class="speaker-avatar"></div><div class="speaker-name">${s.displayName}</div>`;
-    grid.appendChild(div);
+  const list = filterSet ? speakers.filter(s => filterSet.has(s.userId)) : speakers;
+
+  if (!list.length && speakers.length) {
+    const d = document.createElement('div'); d.className = 'status'; d.textContent = 'No speakers at this moment.'; grid.appendChild(d); return;
+  }
+
+  for (const s of list) {
+    const row = document.createElement('div'); row.className = 'speaker'; row.dataset.userId = s.userId;
+    const wrap = document.createElement('div'); wrap.className = 'avatar-wrap';
+    const pad = document.createElement('div'); pad.className = 'halo-pad';
+    const a = document.createElement('div'); a.className = 'speaker-avatar';
+    const img = document.createElement('img');
+
+    const display = s.displayName || s.username || s.userId;
+    const srcs = buildAvatarSources(s);
+    setAvatarImage(img, srcs, display, s.userId);
+
+    a.appendChild(img); pad.appendChild(a); wrap.appendChild(pad);
+    const n = document.createElement('div'); n.className = 'speaker-name'; n.textContent = display;
+
+    row.appendChild(wrap); row.appendChild(n); grid.appendChild(row);
+  }
+
+  initialOrder.clear();
+  $$('.speaker', grid).forEach((el, idx) => initialOrder.set(el.dataset.userId, idx));
+}
+
+function reorderGrid(activeSet) {
+  if (!activeSet || !activeSet.size) return;
+  const nodes = $$('.speaker', grid); if (!nodes.length) return;
+
+  nodes.sort((a, b) => {
+    const aActive = activeSet.has(a.dataset.userId) ? 0 : 1;
+    const bActive = activeSet.has(b.dataset.userId) ? 0 : 1;
+    if (aActive !== bActive) return aActive - bActive;
+    const ai = initialOrder.get(a.dataset.userId) ?? 0; const bi = initialOrder.get(b.dataset.userId) ?? 0;
+    return ai - bi;
   });
+
+  nodes.forEach(n => grid.appendChild(n));
+}
+
+function computeActiveSet() {
+  if (!events.length || !startTimestamp) return new Set();
+  const active = new Set();
+  const now = startTimestamp + (audio.currentTime || 0) * 1000;
+
+  for (const e of events) {
+    if (e.timestamp > now) break;
+    if (e.isSpeaking) active.add(e.userId);
+    else if (e.type === STOP) active.delete(e.userId);
+  }
+  return active;
 }
 
 function updateActiveUI() {
-  if(!startTimestamp) return;
-  const now = startTimestamp + (audio.currentTime * 1000);
-  const active = new Set();
-  events.forEach(e => {
-    if(e.ts <= now) {
-      if(e.isSpeaking) active.add(e.userId);
-      else active.delete(e.userId);
+  if (!events.length || !startTimestamp) return;
+  const active = computeActiveSet();
+
+  if (onlyActiveToggle.checked) {
+    renderSpeakers(active);
+  } else {
+    for (const el of $$('.speaker', grid)) {
+      el.classList.toggle('active', active.has(el.dataset.userId));
     }
-  });
-  document.querySelectorAll('.speaker').forEach(el => {
-    el.classList.toggle('active', active.has(el.id.replace('spk-','')));
+    reorderGrid(active);
+  }
+}
+
+function parseTranscript(content) {
+  const seen = new Map(); const ev = []; let minTs = Infinity;
+  const coalesce = (obj, arr) => { for (const k of arr) { if (obj && obj[k] != null) return obj[k]; } return undefined; };
+
+  function upsertSpeaker(raw) {
+    if (!raw) return;
+    if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch {} }
+    const id = String(coalesce(raw, ['user_id','userId','id','uid','userID','participant_id','participantId']) || '').trim();
+    if (!id) return;
+
+    const prev = seen.get(id) || { userId: id, username: '', displayName: '', profileImage: '' };
+    const username = coalesce(raw, ['username','screen_name','handle','user_name']);
+    const displayName = coalesce(raw, ['display_name','displayName','name']);
+    const profileImage = coalesce(raw, ['profile_image_url','profile_image_url_https','profileImageUrl','profile_image','avatar_url','photo']);
+
+    const next = {
+      userId: id,
+      username: (prev.username && prev.username.length >= 2) ? prev.username : (username || prev.username || ''),
+      displayName: (prev.displayName && prev.displayName !== prev.userId) ? prev.displayName : (displayName || username || prev.displayName || id),
+      profileImage: (profileImage && profileImage.length > (prev.profileImage || '').length) ? profileImage : (prev.profileImage || '')
+    };
+    seen.set(id, next); return id;
+  }
+
+  function pushEvent(ts, uid, marker) {
+    if (!uid) return; ts = Number(ts); if (ts > 1e15) ts = Math.floor(ts / 1e6); if (!Number.isFinite(ts)) return;
+    const code = (typeof marker === 'string' && Number.isFinite(+marker)) ? +marker : marker;
+    const isStart = (code === 17 || marker === 'START' || marker === true || marker === 'start');
+    const isStop = (code === 16 || marker === 'STOP' || marker === false || marker === 'stop');
+    if (!isStart && !isStop) return;
+    ev.push({ timestamp: ts, userId: String(uid), type: isStart ? 17 : 16, isSpeaking: isStart });
+    if (ts < minTs) minTs = ts;
+  }
+
+  function extract(lineObj) {
+    if (!lineObj || typeof lineObj !== 'object') return;
+    let p = lineObj.payload ?? lineObj.data ?? lineObj;
+    if (typeof p === 'string') { try { p = JSON.parse(p); } catch { p = {}; } }
+    let body = p.body ?? p.event ?? lineObj.body ?? lineObj.event;
+    if (typeof body === 'string') { try { body = JSON.parse(body); } catch {} }
+
+    const uid1 = upsertSpeaker(p.sender ?? p.speaker ?? p.user);
+    const uid2 = upsertSpeaker(body && (body.sender ?? body.speaker ?? body.user));
+    const uid = uid1 || uid2;
+
+    const ts = p.timestamp ?? lineObj.timestamp ?? p.ts ?? lineObj.ts ?? p.time ?? lineObj.time ?? (body && (body.timestamp ?? body.ts ?? body.time));
+    const marker = (body && (body.guestBroadcastingEvent ?? body.eventType ?? body.type ?? body.speaking_status)) ??
+                   (p && (p.guestBroadcastingEvent ?? p.eventType ?? p.type ?? p.speaking_status)) ??
+                   lineObj.type ?? lineObj.status;
+
+    pushEvent(ts, uid, marker);
+  }
+
+  let parsed = null; try { parsed = JSON.parse(content); } catch {}
+  if (parsed) {
+    if (Array.isArray(parsed)) { parsed.forEach(extract); }
+    else if (Array.isArray(parsed.lines)) { parsed.lines.forEach(l => { try { extract(typeof l === 'string' ? JSON.parse(l) : l); } catch {} }); }
+    else { extract(parsed); }
+  } else {
+    const lines = content.replace(/\r/g, '').split(/\n+/);
+    for (const line of lines) { const t = line.trim(); if (!t) continue; try { extract(JSON.parse(t)); } catch {} }
+  }
+
+  ev.sort((a, b) => a.timestamp - b.timestamp);
+  const st = (minTs === Infinity) ? Date.now() : minTs;
+  const speakerList = [...seen.values()];
+  return { speakers: speakerList, events: ev, startTimestamp: st };
+}
+
+function generateChapters() {
+  chaptersList.innerHTML = '';
+  if (!events.length || !startTimestamp) return;
+  const chapters = [];
+  let last = null;
+
+  for (const e of events) {
+    if (e.isSpeaking && e.userId !== last) {
+      const t = (e.timestamp - startTimestamp) / 1000;
+      chapters.push({ time: t, userId: e.userId, speaker: speakerById.get(e.userId) });
+      last = e.userId;
+    }
+  }
+  if (!chapters.length) return;
+
+  chaptersContainer.style.display = 'block';
+  chapters.forEach(ch => {
+    const div = document.createElement('div');
+    div.className = 'chapter-item';
+    div.innerHTML = `<span class="chapter-time">${fmt(ch.time)}</span><span class="chapter-speaker">${ch.speaker?.displayName || ch.userId}</span>`;
+    div.onclick = () => {
+      audio.currentTime = ch.time;
+      if (audio.paused) { audio.play(); playBtn.textContent = '⏸️ Pause'; }
+    };
+    chaptersList.appendChild(div);
   });
 }
+
+transcriptInput.onchange = (e) => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const raw = String(ev.target?.result || '');
+    try {
+      const res = parseTranscript(raw);
+      speakers = res.speakers || [];
+      events = res.events || [];
+      startTimestamp = res.startTimestamp || null;
+      speakerById.clear();
+      speakers.forEach(s => speakerById.set(s.userId, s));
+      setStatus(speakers.length ? `Loaded ${speakers.length} speakers and ${events.length} events.` : 'No speakers found.', 'success');
+      renderSpeakers();
+      generateChapters();
+      updateActiveUI();
+    } catch (err) {
+      setStatus('Failed to read transcript.', 'error');
+    }
+  };
+  reader.readAsText(f);
+};
+
+onlyActiveToggle.onchange = () => {
+  if (onlyActiveToggle.checked) { renderSpeakers(computeActiveSet()); }
+  else { renderSpeakers(); updateActiveUI(); }
+};
 </script>
 </body>
 </html>
